@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PollenStudio - AI Variation Gallery</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        body { background-color: #0f172a; color: white; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- CONFIGURATION ---
+        const APP_KEY = 'pk_your_key_here'; // Replace with your key from enter.pollinations.ai
+        const REDIRECT_URL = window.location.origin + window.location.pathname;
+
+        function App() {
+            const [apiKey, setApiKey] = useState(localStorage.getItem('pollen_key'));
+            const [prompt, setPrompt] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [history, setHistory] = useState(JSON.parse(localStorage.getItem('pollen_history') || '[]'));
+
+            // 1. Handle the Auth Redirect
+            useEffect(() => {
+                const hash = window.location.hash;
+                if (hash.includes('api_key=')) {
+                    const params = new URLSearchParams(hash.slice(1));
+                    const key = params.get('api_key');
+                    if (key) {
+                        localStorage.setItem('pollen_key', key);
+                        setApiKey(key);
+                        // Clean URL without refresh
+                        window.history.replaceState(null, null, window.location.pathname);
+                    }
+                }
+            }, []);
+
+            const handleConnect = () => {
+                const params = new URLSearchParams({
+                    redirect_url: REDIRECT_URL,
+                    app_key: APP_KEY,
+                    models: 'flux',
+                    budget: '10' 
+                });
+                window.location.href = `https://enter.pollinations.ai/authorize?${params}`;
+            };
+
+            const generateImages = async () => {
+                if (!prompt || loading) return;
+                setLoading(true);
+
+                const styles = [
+                    "3D Pixar style, cinematic lighting, high resolution, vibrant colors, ",
+                    "Hyper-realistic digital art, intricate details, unreal engine 5, ",
+                    "Whimsical watercolor illustration, soft pastel colors, storybook style, "
+                ];
+
+                try {
+                    const promises = styles.map(async (stylePrefix) => {
+                        const sanitized = (stylePrefix + prompt)
+                            .replace(/[\r\n]+/g, " ")
+                            .replace(/"/g, "'")
+                            .trim();
+
+                        const response = await fetch('https://gen.pollinations.ai/v1/images/generations', {
+                            method: 'POST',
+                            headers: { 
+                                'Authorization': `Bearer ${apiKey}`, 
+                                'Content-Type': 'application/json' 
+                            },
+                            body: JSON.stringify({
+                                prompt: sanitized,
+                                model: "flux",
+                                size: "1024x1024",
+                                seed: Math.floor(Math.random() * 100000)
+                            })
+                        });
+
+                        if (!response.ok) throw new Error("Request failed");
+                        const json = await response.json();
+                        return json.data[0].url;
+                    });
+
+                    const urls = await Promise.all(promises);
+                    const newEntry = { id: Date.now(), prompt, images: urls };
+                    const updated = [newEntry, ...history];
+                    
+                    setHistory(updated);
+                    localStorage.setItem('pollen_history', JSON.stringify(updated));
+                    setPrompt('');
+                } catch (err) {
+                    alert("Error! Key might be expired. Please logout and reconnect.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const logout = () => {
+                localStorage.removeItem('pollen_key');
+                setApiKey(null);
+            };
+
+            return (
+                <div className="min-h-screen p-4 md:p-8">
+                    {/* Header */}
+                    <header className="flex justify-between items-center mb-12 max-w-6xl mx-auto">
+                        <h1 className="text-2xl font-bold flex items-center gap-2">
+                            <span className="text-yellow-400">🌼</span> PollenStudio
+                        </h1>
+                        {apiKey && (
+                            <button onClick={logout} className="text-gray-400 hover:text-white transition text-sm">
+                                Logout
+                            </button>
+                        )}
+                    </header>
+
+                    {!apiKey ? (
+                        <div className="text-center py-20">
+                            <h2 className="text-4xl font-extrabold mb-4">Create AI Art with 0 Costs</h2>
+                            <p className="text-gray-400 mb-8">Bring your own pollen. Your users pay for their own usage.</p>
+                            <button 
+                                onClick={handleConnect}
+                                className="bg-yellow-400 text-black px-8 py-3 rounded-full font-bold hover:scale-105 transition shadow-lg shadow-yellow-400/20"
+                            >
+                                Connect Pollinations Account
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="max-w-6xl mx-auto">
+                            {/* Input Area */}
+                            <div className="glass p-6 rounded-2xl mb-12 flex flex-col md:flex-row gap-4 shadow-xl">
+                                <input 
+                                    className="flex-1 bg-transparent border border-gray-700 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition"
+                                    placeholder="A futuristic city in the clouds..."
+                                    value={prompt}
+                                    onChange={(e) => setPrompt(e.target.value)}
+                                    onKeyPress={(e) => e.key === 'Enter' && generateImages()}
+                                />
+                                <button 
+                                    onClick={generateImages}
+                                    disabled={loading}
+                                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white px-6 py-3 rounded-xl font-bold transition flex items-center justify-center gap-2"
+                                >
+                                    {loading ? 'Generating...' : '✨ Generate 3 Variations'}
+                                </button>
+                            </div>
+
+                            {/* Gallery Section */}
+                            <div className="space-y-12">
+                                <h2 className="text-xl font-semibold border-l-4 border-yellow-400 pl-4">Your Recent Generations</h2>
+                                {history.length === 0 && !loading && (
+                                    <p className="text-gray-600 italic">No art found. Type something above!</p>
+                                )}
+                                
+                                {history.map(item => (
+                                    <div key={item.id} className="glass p-6 rounded-3xl animate-fadeIn">
+                                        <p className="text-sm text-gray-400 mb-4 font-mono">PROMPT: {item.prompt}</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            {item.images.map((url, i) => (
+                                                <div key={i} className="relative group overflow-hidden rounded-xl">
+                                                    <img src={url} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" alt="Generated AI" />
+                                                    <a href={url} target="_blank" className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                                        <span className="text-xs font-bold uppercase tracking-widest">View Full</span>
+                                                    </a>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
