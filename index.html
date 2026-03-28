@@ -12,8 +12,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
-        body { background-color: #0f172a; color: white; }
+        body { background-color: #0f172a; color: white; scroll-behavior: smooth; }
         .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .animate-fadeIn { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
@@ -23,7 +25,7 @@
         const { useState, useEffect } = React;
 
         // --- CONFIGURATION ---
-        const APP_KEY = 'pk_kXullfY59GGZhTNF'; // Replace with your key from enter.pollinations.ai
+        const APP_KEY = 'pk_kXullfY59GGZhTNF'; 
         const REDIRECT_URL = window.location.origin + window.location.pathname;
 
         function App() {
@@ -41,7 +43,6 @@
                     if (key) {
                         localStorage.setItem('pollen_key', key);
                         setApiKey(key);
-                        // Clean URL without refresh
                         window.history.replaceState(null, null, window.location.pathname);
                     }
                 }
@@ -57,54 +58,75 @@
                 window.location.href = `https://enter.pollinations.ai/authorize?${params}`;
             };
 
-            const generateImages = async () => {
-    if (!prompt || loading) return;
-    setLoading(true);
-
-    const styles = [
-        "3D Pixar style, cinematic lighting, vibrant colors, ",
-        "Hyper-realistic digital art, unreal engine 5, ",
-        "Whimsical watercolor illustration, soft pastel colors, "
-    ];
-
-    try {
-        const promises = styles.map(async (stylePrefix) => {
-            const fullPrompt = (stylePrefix + prompt).trim();
-            const seed = Math.floor(Math.random() * 1000000);
-            
-            // Construct the URL with parameters
-            const url = `https://gen.pollinations.ai/image/${encodeURIComponent(fullPrompt)}?width=1024&height=1024&seed=${seed}&model=flux&nologo=true`;
-
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}` // Using the sk_ key from BYOP
+            const downloadImage = async (blobUrl, originalPrompt, index) => {
+                try {
+                    const response = await fetch(blobUrl);
+                    const blob = await response.blob();
+                    const link = document.createElement('a');
+                    link.href = window.URL.createObjectURL(blob);
+                    
+                    // Clean filename based on prompt
+                    const cleanName = originalPrompt.replace(/[^\w\s]/gi, '').replace(/\s+/g, '-').slice(0, 30);
+                    link.download = `${cleanName || 'ai-art'}-v${index + 1}.png`;
+                    
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } catch (err) {
+                    alert("Download failed. Your browser might have cleared the temporary image cache.");
                 }
-            });
+            };
 
-            if (!response.ok) throw new Error("Unauthorized or Generation Failed");
+            const generateImages = async () => {
+                if (!prompt || loading) return;
+                setLoading(true);
 
-            // Convert the response to a Blob and then to a local URL
-            const blob = await response.blob();
-            return URL.createObjectURL(blob); 
-        });
+                const styles = [
+                    "3D Pixar style, cinematic lighting, vibrant colors, ",
+                    "Hyper-realistic digital art, unreal engine 5, intricate details, ",
+                    "Whimsical watercolor illustration, soft pastel colors, "
+                ];
 
-        const urls = await Promise.all(promises);
-        
-        const newEntry = { id: Date.now(), prompt, images: urls };
-        const updated = [newEntry, ...history];
-        
-        setHistory(updated);
-        localStorage.setItem('pollen_history', JSON.stringify(updated));
-        setPrompt('');
-        
-    } catch (err) {
-        console.error("Error:", err);
-        alert("Session expired or invalid key. Please log out and reconnect.");
-    } finally {
-        setLoading(false);
-    }
-};
+                try {
+                    const promises = styles.map(async (stylePrefix) => {
+                        const fullPrompt = (stylePrefix + prompt).trim();
+                        const seed = Math.floor(Math.random() * 1000000);
+                        
+                        const url = `https://gen.pollinations.ai/image/${encodeURIComponent(fullPrompt)}?width=1024&height=1024&seed=${seed}&model=flux&nologo=true`;
+
+                        const response = await fetch(url, {
+                            method: 'GET',
+                            headers: { 'Authorization': `Bearer ${apiKey}` }
+                        });
+
+                        if (!response.ok) throw new Error("Unauthorized or Generation Failed");
+
+                        const blob = await response.blob();
+                        return URL.createObjectURL(blob); 
+                    });
+
+                    const urls = await Promise.all(promises);
+                    const newEntry = { id: Date.now(), prompt, images: urls };
+                    const updated = [newEntry, ...history];
+                    
+                    setHistory(updated);
+                    localStorage.setItem('pollen_history', JSON.stringify(updated));
+                    setPrompt('');
+                    
+                } catch (err) {
+                    console.error("Error:", err);
+                    alert("Session expired or out of pollen. Please log out and reconnect.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const clearHistory = () => {
+                if(window.confirm("Clear your entire gallery history?")) {
+                    setHistory([]);
+                    localStorage.removeItem('pollen_history');
+                }
+            };
 
             const logout = () => {
                 localStorage.removeItem('pollen_key');
@@ -113,7 +135,6 @@
 
             return (
                 <div className="min-h-screen p-4 md:p-8">
-                    {/* Header */}
                     <header className="flex justify-between items-center mb-12 max-w-6xl mx-auto">
                         <h1 className="text-2xl font-bold flex items-center gap-2">
                             <span className="text-yellow-400">🌼</span> PollenStudio
@@ -126,12 +147,12 @@
                     </header>
 
                     {!apiKey ? (
-                        <div className="text-center py-20">
-                            <h2 className="text-4xl font-extrabold mb-4">Create AI Art</h2>
-                            <p className="text-gray-400 mb-8">Bring your own pollen.</p>
+                        <div className="text-center py-20 animate-fadeIn">
+                            <h2 className="text-5xl font-black mb-6 tracking-tight">Triple Your Creativity.</h2>
+                            <p className="text-gray-400 mb-10 text-lg">Generate 3 artistic variations with a single prompt. <br/>Powered by your own Pollen.</p>
                             <button 
                                 onClick={handleConnect}
-                                className="bg-yellow-400 text-black px-8 py-3 rounded-full font-bold hover:scale-105 transition shadow-lg shadow-yellow-400/20"
+                                className="bg-yellow-400 text-black px-10 py-4 rounded-full font-bold hover:scale-105 active:scale-95 transition shadow-2xl shadow-yellow-400/30 text-lg"
                             >
                                 Connect Pollinations Account
                             </button>
@@ -139,10 +160,10 @@
                     ) : (
                         <div className="max-w-6xl mx-auto">
                             {/* Input Area */}
-                            <div className="glass p-6 rounded-2xl mb-12 flex flex-col md:flex-row gap-4 shadow-xl">
+                            <div className="glass p-6 rounded-3xl mb-16 flex flex-col md:flex-row gap-4 shadow-2xl border-white/10">
                                 <input 
-                                    className="flex-1 bg-transparent border border-gray-700 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition"
-                                    placeholder="A futuristic city in the clouds..."
+                                    className="flex-1 bg-transparent border border-gray-700 rounded-2xl px-6 py-4 focus:outline-none focus:border-yellow-400 transition text-lg"
+                                    placeholder="Describe a scene (e.g. 'A futuristic Delhi street')..."
                                     value={prompt}
                                     onChange={(e) => setPrompt(e.target.value)}
                                     onKeyPress={(e) => e.key === 'Enter' && generateImages()}
@@ -150,29 +171,61 @@
                                 <button 
                                     onClick={generateImages}
                                     disabled={loading}
-                                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white px-6 py-3 rounded-xl font-bold transition flex items-center justify-center gap-2"
+                                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white px-8 py-4 rounded-2xl font-bold transition flex items-center justify-center gap-3 text-lg"
                                 >
-                                    {loading ? 'Generating...' : '✨ Generate 3 Variations'}
+                                    {loading ? (
+                                        <span className="flex items-center gap-2">
+                                            <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Generating...
+                                        </span>
+                                    ) : '✨ Generate 3 Variations'}
                                 </button>
                             </div>
 
                             {/* Gallery Section */}
                             <div className="space-y-12">
-                                <h2 className="text-xl font-semibold border-l-4 border-yellow-400 pl-4">Your Recent Generations</h2>
+                                <div className="flex justify-between items-end border-b border-white/10 pb-4">
+                                    <h2 className="text-2xl font-bold">Your Recent Generations</h2>
+                                    {history.length > 0 && (
+                                        <button onClick={clearHistory} className="text-red-400 text-sm hover:underline">Clear History</button>
+                                    )}
+                                </div>
+
                                 {history.length === 0 && !loading && (
-                                    <p className="text-gray-600 italic">No art found. Type something above!</p>
+                                    <div className="text-center py-20 opacity-30">
+                                        <p className="text-2xl">Your gallery is empty</p>
+                                        <p>Try typing a prompt above to see the magic.</p>
+                                    </div>
                                 )}
                                 
                                 {history.map(item => (
-                                    <div key={item.id} className="glass p-6 rounded-3xl animate-fadeIn">
-                                        <p className="text-sm text-gray-400 mb-4 font-mono">PROMPT: {item.prompt}</p>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div key={item.id} className="glass p-8 rounded-[2.5rem] animate-fadeIn border-white/5 shadow-inner">
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="h-2 w-2 rounded-full bg-yellow-400"></div>
+                                            <p className="text-sm text-gray-400 font-mono tracking-wider uppercase">Prompt: {item.prompt}</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             {item.images.map((url, i) => (
-                                                <div key={i} className="relative group overflow-hidden rounded-xl">
-                                                    <img src={url} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" alt="Generated AI" />
-                                                    <a href={url} target="_blank" className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                                                        <span className="text-xs font-bold uppercase tracking-widest">View Full</span>
-                                                    </a>
+                                                <div key={i} className="relative group overflow-hidden rounded-3xl aspect-square shadow-2xl bg-slate-800">
+                                                    <img 
+                                                        src={url} 
+                                                        className="w-full h-full object-cover transition duration-700 group-hover:scale-110" 
+                                                        alt="AI Art" 
+                                                    />
+                                                    
+                                                    {/* Hover Overlay */}
+                                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-4">
+                                                        <button 
+                                                            onClick={() => downloadImage(url, item.prompt, i)}
+                                                            className="bg-white text-black px-6 py-2 rounded-xl font-bold text-sm hover:bg-yellow-400 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 shadow-xl"
+                                                        >
+                                                            📥 Save Image
+                                                        </button>
+                                                        <a href={url} target="_blank" className="text-xs text-white/50 hover:text-white transition underline">Open Original</a>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
